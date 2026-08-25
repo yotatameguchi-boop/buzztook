@@ -143,8 +143,10 @@ function StatCard({
     <Card>
       <CardBody>
         <p className="text-xs text-ink-muted">{label}</p>
-        <p className="mt-2 flex items-baseline gap-1.5">
-          <span className={`text-2xl font-bold tabular ${tone ? TONE_TEXT[tone] : "text-ink"}`}>
+        <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
+          <span
+            className={`whitespace-nowrap text-2xl font-bold tabular ${tone ? TONE_TEXT[tone] : "text-ink"}`}
+          >
             {value}
           </span>
           {unit ? <span className="text-[11px] text-ink-faint">{unit}</span> : null}
