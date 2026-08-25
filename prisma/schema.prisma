@@ -1,0 +1,208 @@
+// BuzzTook Database Schema Ver.1
+// 仕様書 §15 データベース設計 Ver.1 に準拠。
+//
+// provider は PostgreSQL。DATABASE_URL が設定されていない環境では
+// アプリはローカル JSON ストア (src/lib/db/json-repository.ts) にフォールバックする。
+// 詳細は README の「データベース」を参照。
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id    String @id @default(cuid())
+  email String @unique
+  name  String
+  /// scrypt によるパスワードハッシュ（形式は src/lib/auth/password.ts を参照）
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ownedOrganizations Organization[] @relation("OrganizationOwner")
+  accounts           Account[]
+  projects           Project[]
+
+  @@map("users")
+}
+
+/// 芸能事務所・チーム向け（仕様書 §15 organizations）
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String   @map("owner_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  owner    User      @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  accounts Account[]
+
+  @@map("organizations")
+}
+
+/// TikTok アカウント情報。platform は将来の他 SNS 拡張を見込んで文字列。
+model Account {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  organizationId    String?  @map("organization_id")
+  platform          String   @default("tiktok")
+  externalAccountId String?  @map("external_account_id")
+  displayName       String   @map("display_name")
+  followerCount     Int      @default(0) @map("follower_count")
+  category          String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  projects     Project[]
+
+  @@map("accounts")
+}
+
+/// 1本のコンテンツ制作単位
+/// status: DRAFT | SCRIPT_ANALYZED | VIDEO_UPLOADED | VIDEO_ANALYZED | POSTED | RESULT_COLLECTED
+model Project {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  accountId         String?  @map("account_id")
+  title             String
+  genre             String
+  targetDescription String   @map("target_description")
+  expectedDuration  Int      @map("expected_duration")
+  status            String   @default("DRAFT")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+  account     Account?     @relation(fields: [accountId], references: [id])
+  scripts     Script[]
+  videos      Video[]
+  postResults PostResult[]
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model Script {
+  id        String   @id @default(cuid())
+  projectId String   @map("project_id")
+  version   Int
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  analyses ScriptAnalysis[]
+
+  @@unique([projectId, version])
+  @@map("scripts")
+}
+
+/// 10項目スコアはすべて 0-100 の正規化スコア。
+/// パーセンタイルは percentiles(JSON文字列) に比較母集団ごとに保持する。
+model ScriptAnalysis {
+  id                     String   @id @default(cuid())
+  scriptId               String   @map("script_id")
+  overallScore           Float    @map("overall_score")
+  overallPercentile      Float    @map("overall_percentile")
+  hookScore              Float    @map("hook_score")
+  curiosityScore         Float    @map("curiosity_score")
+  targetFitScore         Float    @map("target_fit_score")
+  empathyScore           Float    @map("empathy_score")
+  noveltyScore           Float    @map("novelty_score")
+  structureScore         Float    @map("structure_score")
+  informationDensityScore Float   @map("information_density_score")
+  emotionScore           Float    @map("emotion_score")
+  viralityScore          Float    @map("virality_score")
+  memorabilityScore      Float    @map("memorability_score")
+  confidenceScore        Float    @map("confidence_score")
+  /// JSON: 特徴量・パーセンタイル・改善提案・表示5軸のスナップショット
+  payload                String
+  modelVersion           String   @map("model_version")
+  scoringVersion         String   @map("scoring_version")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  script Script @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@index([scriptId])
+  @@map("script_analyses")
+}
+
+/// Phase 3（完成動画分析）用。Ver.1 ではアップロードのみ利用。
+model Video {
+  id              String   @id @default(cuid())
+  projectId       String   @map("project_id")
+  version         Int
+  storageUrl      String   @map("storage_url")
+  durationSeconds Float?   @map("duration_seconds")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  analyses VideoAnalysis[]
+
+  @@map("videos")
+}
+
+model VideoAnalysis {
+  id                     String   @id @default(cuid())
+  videoId                String   @map("video_id")
+  overallScore           Float    @map("overall_score")
+  overallPercentile      Float    @map("overall_percentile")
+  hookScore              Float    @map("hook_score")
+  curiosityScore         Float    @map("curiosity_score")
+  targetFitScore         Float    @map("target_fit_score")
+  empathyScore           Float    @map("empathy_score")
+  noveltyScore           Float    @map("novelty_score")
+  structureScore         Float    @map("structure_score")
+  informationDensityScore Float   @map("information_density_score")
+  emotionScore           Float    @map("emotion_score")
+  viralityScore          Float    @map("virality_score")
+  memorabilityScore      Float    @map("memorability_score")
+  confidenceScore        Float    @map("confidence_score")
+  payload                String
+  modelVersion           String   @map("model_version")
+  scoringVersion         String   @map("scoring_version")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@map("video_analyses")
+}
+
+/// Phase 4（TikTok連携）用。Ver.1 では手入力での取り込みのみ想定。
+model PostResult {
+  id              String   @id @default(cuid())
+  projectId       String   @map("project_id")
+  externalVideoId String?  @map("external_video_id")
+  postedAt        DateTime @map("posted_at")
+  viewCount       Int      @default(0) @map("view_count")
+  likeCount       Int      @default(0) @map("like_count")
+  commentCount    Int      @default(0) @map("comment_count")
+  shareCount      Int      @default(0) @map("share_count")
+  favoriteCount   Int      @default(0) @map("favorite_count")
+  collectedAt     DateTime @default(now()) @map("collected_at")
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  comments Comment[]
+
+  @@map("post_results")
+}
+
+model Comment {
+  id                String   @id @default(cuid())
+  postResultId      String   @map("post_result_id")
+  externalCommentId String?  @map("external_comment_id")
+  content           String
+  sentiment         String?
+  emotionLabel      String?  @map("emotion_label")
+  isEmpathy         Boolean  @default(false) @map("is_empathy")
+  isMemoryRelated   Boolean  @default(false) @map("is_memory_related")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  postResult PostResult @relation(fields: [postResultId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
